@@ -1,0 +1,11 @@
+#!/usr/bin/bash
+
+# "THE BEER-WARE LICENSE" (Revision 42):
+# <eric@obarun.org> wrote this file.  As long as you retain this notice you
+# can do whatever you want with this stuff. If we meet some day, and you think
+# this stuff is worth it, you can buy me a beer in return.   Eric Vidal
+
+# just launch the fresh iso
+
+path=`pwd`
+qemu-system-x86_64 -m 1024 -cdrom $path/obarun-devel.iso

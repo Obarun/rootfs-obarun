@@ -1,0 +1,40 @@
+
+basic_mod(){
+	/usr/bin/modprobe -a ehci_hcd usbhid hid sd_mod ahci libahci libata scsi_mod xhci_pci xhci_hcd ehci_pci usb-storage usbcore usb-common
+}
+
+mod(){
+    find /sys/devices -name modalias -exec sort -u {} + | xargs -0 /usr/bin/modprobe -qa
+}
+
+all_mod(){
+	for i in /lib/modules/4.3.3-3-ARCH/kernel/*; do
+		mod=$(echo ${i%.ko}|awk -F"kernel/" '{print $2}')
+		/usr/bin/modprobe $mod
+	done
+}
+
+populate(){
+	
+	#populate block devices
+	
+	for i in /sys/block/*/dev /sys/block/*/*/dev; do
+		if [ -f $i ]; then
+			MAJOR=$(sed 's/:.*//' < $i)
+			MINOR=$(sed 's/.*://' < $i)
+			DEVNAME=$(echo $i | sed -e 's@/dev@@' -e 's@.*/@@')
+			mknod /dev/$DEVNAME b $MAJOR $MINOR
+		fi
+	done
+
+	# Populate char devices
+
+	for i in /sys/bus/*/devices/*/dev /sys/class/*/*/dev; do
+		if [ -f $i ]; then
+			MAJOR=$(sed 's/:.*//' < $i)
+			MINOR=$(sed 's/.*://' < $i)
+			DEVNAME=$(echo $i | sed -e 's@/dev@@' -e 's@.*/@@')
+			mknod /dev/$DEVNAME c $MAJOR $MINOR
+		fi
+	done
+} 

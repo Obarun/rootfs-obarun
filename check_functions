@@ -1,0 +1,18 @@
+#!/usr/bin/bash
+
+# "THE BEER-WARE LICENSE" (Revision 42):
+# <eric@obarun.org> wrote this file.  As long as you retain this notice you
+# can do whatever you want with this stuff. If we meet some day, and you think
+# this stuff is worth it, you can buy me a beer in return.   Eric Vidal
+
+# use this scripts to test a function before include it in rootfs_helper
+
+source ./rootfs_helper
+
+
+add_file_bin "/usr/bin/kmod"
+
+for applet in {dep,ins,rm,ls}mod mod{probe,info}; do
+	ln -sfT "/usr/bin/kmod" "$work_dir/usr/bin/$applet" 
+done
+

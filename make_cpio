@@ -1,0 +1,28 @@
+#!/usr/bin/bash
+
+# "THE BEER-WARE LICENSE" (Revision 42):
+# <eric@obarun.org> wrote this file.  As long as you retain this notice you
+# can do whatever you want with this stuff. If we meet some day, and you think
+# this stuff is worth it, you can buy me a beer in return.   Eric Vidal
+
+# make a cpio image 
+
+
+path=`pwd`
+make_cpio(){
+	
+	if ! [ -d $path/iso ]; then
+		mkdir -p $path/iso
+	fi
+	
+	#delete old rootfs.cpio
+	if [ -e $path/iso/rootfs.cpio.gz ]; then
+		echo "Deleting old cpio"
+		rm $path/iso/rootfs.cpio.gz
+	fi
+	
+	cd $path/rootfs
+	echo "Create cpio image"
+	find . | cpio -H newc -o -R '0:0' | gzip > $path/iso/rootfs.cpio.gz
+}
+make_cpio

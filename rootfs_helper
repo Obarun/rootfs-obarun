@@ -1,0 +1,190 @@
+#!/usr/bin/bash
+
+# "THE BEER-WARE LICENSE" (Revision 42):
+# <eric@obarun.org> wrote this file.  As long as you retain this notice you
+# can do whatever you want with this stuff. If we meet some day, and you think
+# this stuff is worth it, you can buy me a beer in return.   Eric Vidal
+
+path=`pwd`
+work_dir="$path"/rootfs
+kernver=`uname -r`
+
+base_struct(){
+	
+	if ! [ -d $work_dir ]; then
+		mkdir -p $work_dir
+	fi
+	
+	install -dm755  "$work_dir"/{new_root,proc,sys,dev,run,tmp,etc,usr/{local,lib,bin}}
+    ln -s "usr/lib" "$work_dir/lib"
+    ln -s "lib"     "$work_dir/usr/lib64"
+    ln -s "usr/lib" "$work_dir/lib64"
+    ln -s "../lib"  "$work_dir/usr/local/lib"
+    ln -s "bin"     "$work_dir/usr/sbin"
+    ln -s "usr/bin" "$work_dir/bin"
+    ln -s "usr/bin" "$work_dir/sbin"
+    ln -s "../bin"  "$work_dir/usr/local/bin"
+    ln -s "../bin"  "$work_dir/usr/local/sbin"
+    
+    install -dm755 "$work_dir/usr/lib/modules/$kernver/kernel"
+	
+	ln -s /proc/self/mounts "$work_dir/etc/mtab"
+    >"$work_dir/etc/fstab"
+         
+    >"$work_dir/etc/initrd-release"
+
+    >"$work_dir/etc/ld.so.conf"
+}
+
+make_cpio(){
+	
+	if ! [ -d $path/iso ]; then
+		mkdir -p $path/iso
+	fi
+	
+	#delete old rootfs.cpio
+	if [ -e $path/iso/rootfs.cpio.gz ]; then
+		echo "Deleting old cpio"
+		rm $path/iso/rootfs.cpio.gz
+	fi
+	
+	cd $path/rootfs
+	echo "Create cpio image"
+	find . | cpio -H newc -o | gzip > $path/iso/rootfs.cpio.gz
+}
+
+# $1 module name
+find_mod(){
+	modinfo -F filename "$1"
+}
+
+# install basic modules from the host kernel
+basic_kern_mod(){
+	local tab_mods 
+	
+	mapfile -t tab_mods < <(find /sys/devices -name modalias -exec sort -u {} + | xargs -0)
+	mapfile -t tab_mods < <(/usr/bin/modprobe -qaR "${tab_mods[@]}")
+	for i in "${tab_mods[@]}"; do
+		install_mod "$i"
+	done
+}
+
+decompress_mod(){
+	local mod_dest="$work_dir/usr/lib/modules/$kernver" \
+		  mod_ori="/usr/lib/modules/$kernver" 
+
+	
+	cp "$1" "$mod_dest/kernel"
+	
+	mapfile -t mod_format < <(ls -1 $mod_dest/kernel)
+	
+	for format in "${mod_format[@]}"; do
+       case "$format" in
+           *.xz)
+              xz -d "$mod_dest/kernel/$format"
+              rm "$mod_dest/kernel/$format"
+              ;;
+           *.gz)
+              gzip -d "$mod_dest/kernel/$format"
+              rm "$mod_dest/kernel/$format"
+              ;;
+       esac
+    done
+    
+    install -m644 -t "$mod_dest" "$mod_ori"/modules.builtin
+    
+    awk -F'/' '{ print "kernel/" $NF }' "$mod_ori/modules.order" >"$mod_dest/modules.order"
+    
+    depmod -b "$work_dir" "$kernver" 
+}
+# $1: firmware path fragment
+add_firmware(){
+	firmware_dir=({/usr,}/lib/firmware/updates {/usr,}/lib/firmware)
+    local fw fwpath
+    fw="$1" 
+    for fw; do
+        for fwpath in "${firmware_dir[@]}"; do
+            if [[ -f $fwpath/$fw ]]; then
+                add_file_bin "$fwpath/$fw" "$fwpath/$fw" 644 
+            fi
+        done
+    done
+}
+# $1 module name	
+install_mod(){
+	local mod=
+	mod="$1"
+	while IFS=':= ' read -r -d '' field value; do
+		case "$field" in
+            filename)
+                ori=$value
+                decompress_mod "$ori"
+                ;;
+            depends)
+                IFS=',' read -r -a deps <<< "$value"
+                mapfile -t deps < <(find_mod "${deps[@]}")
+                for i in "${deps[@]}"; do
+					decompress_mod "$i"
+                done
+                ;;
+            firmware)
+                firmware+=("$value")
+                add_firmware "$firmware"
+                ;;
+        esac
+    done < <(modinfo -k "$kernver" -0 "$mod")
+}
+
+
+# find and dependencies for binary
+# $1 source file
+bin_deps(){
+	local -a lib 
+	local line= regex=
+	lddout=$(ldd "$1")
+    
+    # resolve lib
+   	regex='(/.+) \(0x[a-fA-F0-9]+\)'
+	while read line; do
+		if [[ $line =~ $regex ]]; then
+			lib=${BASH_REMATCH[1]}
+		fi
+    add_file_bin "$lib" "$lib" "$(stat -Lc %a "$lib" 2>/dev/null)"
+        
+	done <<< "$lddout"
+}
+
+# $1 source file
+# $2 destination file same as $2 if is not specified
+# $3 file mode
+add_file_bin(){
+	local dest source 
+
+	source="$1"
+	dest=${2:-$source}
+	
+	# determine binary mode if doesn't given
+	if [[ $3 == "" ]]; then
+		mode=$(stat -c %a "$source" 2>/dev/null)
+	else 
+		mode="$3"
+	fi
+		
+	install -Dm$mode "$source" "$work_dir$dest" 2>/dev/null
+		
+	# if file is a binary then add dependencies for it
+	if [[ $(file "$source" | grep "executable") ]]; then
+		bin_deps "$source"
+	fi
+}
+
+# create necessary for busybox
+busybox_sym(){
+	# add busybox itself
+	add_file_bin /usr/bin/busybox /usr/bin/busybox 
+	# make symlink
+	for prog in $(/usr/bin/busybox --list); do
+		ln -sfT busybox "$work_dir/usr/bin/$prog"
+	done
+}
+

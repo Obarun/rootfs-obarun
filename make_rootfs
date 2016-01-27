@@ -1,0 +1,44 @@
+#!/usr/bin/bash
+
+# "THE BEER-WARE LICENSE" (Revision 42):
+# <eric@obarun.org> wrote this file.  As long as you retain this notice you
+# can do whatever you want with this stuff. If we meet some day, and you think
+# this stuff is worth it, you can buy me a beer in return.   Eric Vidal
+
+# make the rootfs. this fill will be split as hook arch system
+
+path=`pwd`
+
+source $path/rootfs_helper
+if [ -d $path/rootfs ]; then
+	rm -r $path/rootfs
+fi
+# make basic directory
+base_struct
+
+# add init file
+add_file_bin $path/init /init
+add_file_bin $path/init_helpers /init_helpers
+
+# add busybox and symlink
+busybox_sym
+
+# add kmod
+add_file_bin "/usr/bin/kmod"
+
+for applet in {dep,ins,rm,ls}mod mod{probe,info}; do
+	ln -sfT "/usr/bin/kmod" "$work_dir/usr/bin/$applet" 
+done
+
+# basic modules for kernel
+basic_kern_mod
+
+# add module squashfs
+install_mod squashfs
+
+add_file_bin "/usr/bin/blkid"
+add_file_bin "/usr/bin/mount"
+
+#make_cpio
+
+

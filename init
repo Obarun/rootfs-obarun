@@ -1,0 +1,37 @@
+#!/usr/bin/ash
+
+# "THE BEER-WARE LICENSE" (Revision 42):
+# <eric@obarun.org> wrote this file.  As long as you retain this notice you
+# can do whatever you want with this stuff. If we meet some day, and you think
+# this stuff is worth it, you can buy me a beer in return.   Eric Vidal
+
+# do not provide keyboard for the moment
+
+PATH="/usr/bin" 
+
+init=/sbin/init
+newroot="/newroot"
+
+. /init_helpers
+
+## "Mounting pseudo-filesystems"
+mount -o nosuid,noexec,nodev -t proc proc /proc
+mount -o nosuid,noexec,nodev -t sysfs sys /sys
+mount -o mode=0755,nosuid,nodev -t tmpfs run /run 
+mount -o mode=0755,nosuid -t tmpfs dev /dev #devtmpfs can be used here and do the same thing as mdev
+mkdir -p -m0755 /run/runit /run/lvm /run/user /dev/pts /dev/shm /run/lock
+
+# populate /sys
+/usr/bin/mdev -s
+
+#load basic modules
+mod
+
+## Need to be made after populating /dev ???
+mount -o mode=0620,gid=5,nosuid,noexec -n -t devpts devpts /dev/pts
+mount -o mode=1777,nosuid,nodev -n -t tmpfs shm /dev/shm
+
+# open a shell
+exec setsid /usr/bin/busybox sh -c 'exec sh </dev/tty1 >/dev/tty1 2>&1'
+
+

@@ -1,0 +1,51 @@
+#!/usr/bin/bash
+
+# "THE BEER-WARE LICENSE" (Revision 42):
+# <eric@obarun.org> wrote this file.  As long as you retain this notice you
+# can do whatever you want with this stuff. If we meet some day, and you think
+# this stuff is worth it, you can buy me a beer in return.   Eric Vidal
+
+# make the iso
+
+path=`pwd`
+version="vmlinuz-linux"
+cmd_line="default $version  initrd=initrd-devel.img"
+FDINITRD="$path/iso/rootfs.cpio.gz"
+
+make_iso(){
+
+for i in $path/iso/{initrd-devel.img,isolinux.bin,isolinux.cfg,ldlinux.c32}; do
+	echo "Remove old $i"
+	rm $i
+done
+
+if [ -f /usr/lib/syslinux/bios/isolinux.bin ] ; then 
+	cp /usr/lib/syslinux/bios/{isolinux.bin,ldlinux.c32} $path/iso
+fi
+
+if [ -f /boot/vmlinuz-linux ]; then
+	if [ -f $path/iso/vmlinuz-linux ]; then
+		echo "Deleting old kernel image"
+		rm $path/iso/vmlinuz-linux
+	fi
+	cp /boot/vmlinuz-linux $path/iso/
+fi	
+
+if [ -f $path/obarun-devel.iso ]; then
+	echo "Remove old iso"
+	rm $path/obarun-devel.iso
+fi
+
+echo $cmd_line > $path/iso/isolinux.cfg
+
+cp $FDINITRD $path/iso/initrd-devel.img ; 
+
+
+genisoimage -J -r -o $path/obarun-devel.iso -b isolinux.bin -c boot.cat \
+	-no-emul-boot -boot-load-size 4 -boot-info-table $path/iso 
+
+isohybrid $path/obarun-devel.iso  #2>/dev/null || true
+
+}
+
+make_iso
