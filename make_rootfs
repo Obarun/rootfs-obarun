@@ -5,13 +5,12 @@
 # can do whatever you want with this stuff. If we meet some day, and you think
 # this stuff is worth it, you can buy me a beer in return.   Eric Vidal
 
-# make the rootfs. this fill will be split as hook arch system
-
 path=`pwd`
 
 source $path/rootfs_helper
+
 if [ -d $path/rootfs ]; then
-	rm -r $path/rootfs
+	rm -Rf $path/rootfs
 fi
 # make basic directory
 base_struct
@@ -25,9 +24,9 @@ busybox_sym
 
 # add kmod
 add_file_bin "/usr/bin/kmod"
-
+add_file_bin "/usr/lib/libkmod.so.2.3.0"
 for applet in {dep,ins,rm,ls}mod mod{probe,info}; do
-	ln -sfT "/usr/bin/kmod" "$work_dir/usr/bin/$applet" 
+	ln -sfT "kmod" "$work_dir/usr/bin/$applet" 
 done
 
 # basic modules for kernel
@@ -39,6 +38,7 @@ install_mod squashfs
 add_file_bin "/usr/bin/blkid"
 add_file_bin "/usr/bin/mount"
 
+ldconfig -r $work_dir
 #make_cpio
 
 
