@@ -9,6 +9,7 @@ path=`pwd`
 work_dir="$path"/rootfs
 kernver=`uname -r`
 rc_mod=""
+
 base_struct(){
 	
 	if ! [ -d $work_dir ]; then
@@ -59,42 +60,45 @@ find_mod(){
 }
 
 # $1 modules name
-# return rc_mod 0 for sucess 
+# return rc_mod=0 on sucess or rc_mod=1 on fail 
 check_mod(){
 	
-	local parse_mod mod_rootfs mod_builtin path
+	local parse_name mod_rootfs mod_builtin path present
 	local -a rootfs_mod
 	
 	mapfile -t rootfs_mod < <(find $work_dir/usr/lib/modules/$kernver/kernel/ -name "*.ko" )
 	
-	for i in "${rootfs_mod[@]}"; do
-		parse_mod=${i##*/}
-		parse_mod=${parse_mod%.ko}
-		if [[ "$1" = "$parse_mod" ]]; then
+	for present in "${rootfs_mod[@]}"; do
+		parse_name=${present##*/}
+		parse_name=${parse_name%.ko}
+		
+		if [[ "$1" == "$parse_name" ]]; then
 			mod_rootfs=0
 		fi
 	done
 	
 	if [[ -r /usr/lib/modules/$kernver/modules.builtin ]]; then
-		while read path; do
-			parse_mod=${path##*/}
-			parse_mod=${parse_mod%.ko}
-			if [[ "$parse_mod" == "$1" ]]; then
+		while read name; do
+			parse_name=${name##*/}
+			parse_name=${parse_name%.ko}
+			if [[ "$1" ==  "$parse_name" ]]; then
 				mod_builtin=0
 			fi
 		done <"/usr/lib/modules/$kernver/modules.builtin"
 	fi
-	if [[ $mod_builtin == 0 || $mod_rootfs == 0 ]]; then
+	if [[ "$mod_builtin" == 0 || "$mod_rootfs" == 0 ]]; then
 		rc_mod=0
+	else 
+		rc_mod=1
 	fi
-	unset parse_mod mod_rootfs mod_builtin
+	unset parse_mod mod_rootfs mod_builtin  present
 }
 
 # install basic modules from the host kernel
 basic_kern_mod(){
 	local tab_mods 
 	
-	mapfile -t tab_mods < <(find /sys/devices -name modalias -exec sort -u {} + | xargs -0)
+	mapfile -t tab_mods < <(find /sys/devices -name modalias -exec sort -u {} +)
 	mapfile -t tab_mods < <(/usr/bin/modprobe -qaR "${tab_mods[@]}")
 	
 	for i in "${tab_mods[@]}"; do
@@ -105,30 +109,22 @@ basic_kern_mod(){
 decompress_mod(){
 	local mod_dest="$work_dir/usr/lib/modules/$kernver" \
 		  mod_ori="/usr/lib/modules/$kernver" 
-
+		  mod_name=${1##*/}
 	
 	cp "$1" "$mod_dest/kernel"
 	
-	mapfile -t mod_format < <(ls -1 $mod_dest/kernel)
-	
-	for format in "${mod_format[@]}"; do
+	for format in "$mod_name" ; do
        case "$format" in
            *.xz)
               xz -d "$mod_dest/kernel/$format"
-              #rm "$mod_dest/kernel/$format"
+              rm "$mod_dest/kernel/$format" 2>/dev/null
               ;;
            *.gz)
               gzip -d "$mod_dest/kernel/$format"
-              #rm "$mod_dest/kernel/$format"
+              rm "$mod_dest/kernel/$format" 2>/dev/null
               ;;
        esac
     done
-    
-    install -m644 -t "$mod_dest" "$mod_ori"/modules.builtin
-    
-    awk -F'/' '{ print "kernel/" $NF }' "$mod_ori/modules.order" >"$mod_dest/modules.order"
-    
-    depmod -b "$work_dir" "$kernver" 
 }
 # $1: firmware path fragment
 add_firmware(){
@@ -145,10 +141,15 @@ add_firmware(){
 }
 # $1 module name	
 install_mod(){
-	local mod=
+	local mod_dest="$work_dir/usr/lib/modules/$kernver" \
+		  mod_ori="/usr/lib/modules/$kernver" \
+		  mod= 
+		  
 	mod="$1"
 	check_mod "$mod"
-	if [[ $rc_mod != 0 ]]; then
+	
+	if [[ $rc_mod == 1 ]]; then
+		unset rc_mod
 		while IFS=':= ' read -r -d '' field value; do
 			case "$field" in
 				filename)
@@ -157,21 +158,32 @@ install_mod(){
 					;;
 				depends)
 					IFS=',' read -r -a deps <<< "$value"
-					mapfile -t deps < <(find_mod "${deps[@]}")
-					for i in "${deps[@]}"; do
-						decompress_mod "$i"
-					done
+					if [[ "$deps" != "" ]]; then
+						for depend in "${deps[@]}"; do
+							check_mod "$depend"
+							if [[ "$rc_mod" == 1 ]]; then
+								unset rc_mod
+								mod_found=$(find_mod "$depend")
+								decompress_mod "$mod_found"
+							fi
+						done
+					fi
 					;;
 				firmware)
 					firmware+=("$value")
 					add_firmware "$firmware"
 					;;
 			esac
-		done < <(modinfo -k "$kernver" -0 "$mod")
+		done < <(modinfo -k "$kernver" -0 "$mod" 2>/dev/null)
 	else
 		echo "$mod already exit, do nothing"
 	fi
-	unset rc_mod
+	
+	install -m644 -t "$mod_dest" "$mod_ori"/modules.builtin
+    
+    awk -F'/' '{ print "kernel/" $NF }' "$mod_ori/modules.order" >"$mod_dest/modules.order"
+    
+    depmod -b "$work_dir" "$kernver" 
 }
 
 
@@ -220,7 +232,8 @@ add_file_bin(){
 # create necessary for busybox
 busybox_sym(){
 	# add busybox itself
-	add_file_bin $path/src/busybox/pkg/mkinitcpio-busybox/usr/lib/initcpio/busybox /usr/bin/busybox 
+	#add_file_bin $path/src/busybox/pkg/mkinitcpio-busybox/usr/lib/initcpio/busybox /usr/bin/busybox 
+	add_file_bin /usr/bin/busybox /usr/bin/busybox
 	chmod 4555 $work_dir/usr/bin/busybox
 	# make symlink
 	for prog in $(/usr/bin/busybox --list); do
