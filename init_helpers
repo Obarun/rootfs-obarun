@@ -1,16 +1,18 @@
-
+#!/usr/bin/bash
 basic_mod(){
-	/usr/bin/modprobe -a ehci_hcd usbhid hid sd_mod ahci libahci libata scsi_mod xhci_pci xhci_hcd ehci_pci usb-storage usbcore usb-common
+	for i in ehci_hcd usbhid hid sd_mod ahci libahci libata scsi_mod xhci_pci xhci_hcd ehci_pci usb-storage usbcore usb-common; do
+		/usr/bin/modprobe $i
+	done
 }
 
 mod(){
-    find /sys/devices -name modalias -exec sort -u {} + | xargs -0 /usr/bin/modprobe -qa
+    find /sys/devices -name modalias -exec sort -u {} + | xargs -0 /usr/bin/modprobe -avnR
 }
 
 all_mod(){
 	for i in /lib/modules/4.3.3-3-ARCH/kernel/*; do
 		mod=$(echo ${i%.ko}|awk -F"kernel/" '{print $2}')
-		/usr/bin/modprobe $mod
+		/usr/bin/modprobe -vn $mod
 	done
 }
 
